@@ -8,24 +8,25 @@ from playwright.async_api import async_playwright
 progress_bars = {}
 
 # Функция для запуска проверок и обновления прогресса
-async def run_check(dungeon_name, progress_bar, character_string):
+async def run_check(dungeon_name, progress_bar, character_string, selected_keyword, selected_key):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=False)  # headless=False для отладки
         page = await browser.new_page()
 
         try:
+            #print(selected_key)
             # Переход на страницу Raidbots Droptimizer
             await page.goto("https://www.raidbots.com/simbot/droptimizer", timeout=60000)
             await page.locator("#SimcUserInput-input").click()
             await page.locator("#SimcUserInput-input").fill(character_string)
             await page.get_by_text("Mythic+ Dungeons").click()
-            await page.locator("div").filter(has_text=re.compile(r"^Cinderbrew Meadery$")).nth(1).click()
-
-            # Шаг 1: Выбор подземелья
-            await page.wait_for_selector('input#dungeon')
-            await page.fill('input#dungeon', dungeon_name)
-            await page.keyboard.press("Enter")  # Подтверждение выбора подземелья
-
+            #await page.locator("div").filter(has_text=re.compile(r"^Cinderbrew Meadery$")).nth(1).click()
+            await page.get_by_text(selected_keyword).click()
+            if(selected_key == 1):
+                await page.get_by_text(f"Mythic", exact=True).click()
+            else:
+                await page.get_by_text(f"Mythic {selected_key}").click()
+            await page.pause()
         except Exception as e:
             print(f"Ошибка для {dungeon_name}: {e}")
         finally:
@@ -45,12 +46,19 @@ def run_code():
     selected_items = [item for item, var in checkboxes.items() if var.get()]
     print(f"Selected Items: {selected_items}")
 
+    selected_keywords = [
+        data["keyword"] for data in checkbox_data
+        if checkboxes[data["text"]].get()
+    ]
+
+    selected_key = selected_value.get()
+
     # Создаем прогресс-бары для каждого выбранного значения
     for item in selected_items:
         create_progress_bar(item)
 
     # Запускаем асинхронные задачи для каждого выбранного подземелья
-    asyncio.run(run_all_checks(selected_items))
+    asyncio.run(run_all_checks(selected_items, selected_keywords, selected_key))
 
 # Функция для создания прогресс-бара
 def create_progress_bar(name):
@@ -67,12 +75,12 @@ def create_progress_bar(name):
     progress_bars[name] = progress
 
 # Функция для запуска всех проверок параллельно
-async def run_all_checks(selected_items):
+async def run_all_checks(selected_items, selected_keywords, selected_key):
     tasks = []
-    for dungeon_name in selected_items:
+    for dungeon_name, selected_keyword in zip(selected_items, selected_keywords):
         progress_bar = progress_bars[dungeon_name]
         character = text_area.get("1.0", tk.END).strip()
-        task = asyncio.create_task(run_check(dungeon_name, progress_bar, character))
+        task = asyncio.create_task(run_check(dungeon_name, progress_bar, character, selected_keyword, selected_key))
         tasks.append(task)
 
     # Ждем завершения всех задач
@@ -81,7 +89,8 @@ async def run_all_checks(selected_items):
 # Создание главного окна
 root = tk.Tk()
 root.title("UI Приложение")
-root.geometry("800x600")  # Размер окна
+#root.geometry("800x600")  # Размер окна
+root.state('zoomed')
 
 # Разделение экрана на левую и правую части
 left_frame = tk.Frame(root)
