@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright
 import re
 import threading
 import os
+from datetime import datetime
 import time
 
 progress_bars = {}
@@ -29,6 +30,7 @@ async def run_check(dungeon_name, character_string, selected_keyword, selected_k
 
             time.sleep(1)
             await page.get_by_role("button", name="Run Droptimizer").click()
+
             previous_status = None
             max_retries = 60
             retry_count = 0
@@ -71,7 +73,7 @@ async def run_check(dungeon_name, character_string, selected_keyword, selected_k
                 print(f"Превышено максимальное время ожидания для {dungeon_name}.")
                 return
 
-            await save_screenshot(page, selected_keyword)
+            await save_screenshot(page, selected_keyword.replace(':', ''))
 
         except Exception as e:
             print(f"Ошибка для {dungeon_name}: {e}")
@@ -81,7 +83,8 @@ async def run_check(dungeon_name, character_string, selected_keyword, selected_k
 
 async def save_screenshot(page, selected_keyword):
     os.makedirs("./Result/", exist_ok=True)
-    file_path = f"./Result/{selected_keyword}.png"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # Уникальный временной штамп
+    file_path = f"./Result/{selected_keyword}_{timestamp}.png"
     await page.screenshot(path=file_path, full_page=True)
     print(f"Скриншот сохранен: {file_path}")
 
@@ -147,7 +150,7 @@ async def run_all_checks(selected_items, selected_keywords, selected_key):
 
 
 root = tk.Tk()
-root.title("UI Приложение")
+root.title("RaidbotsFucker")
 root.state('zoomed')
 
 left_frame = tk.Frame(root)
