@@ -1,2 +1,0 @@
-# RaidbotsFucker
-Автоматизация simc
