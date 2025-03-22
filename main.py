@@ -1,8 +1,12 @@
-import tkinter as tk
-from tkinter import ttk
-from PIL import Image, ImageTk
-import asyncio
 from playwright.async_api import async_playwright
+from PIL import Image, ImageTk
+from tkinter import ttk
+import tkinter as tk
+import threading
+import asyncio
+import time
+import re
+import os
 
 # Словарь для хранения прогресс-баров и их текущих значений
 progress_bars = {}
@@ -10,27 +14,99 @@ progress_bars = {}
 # Функция для запуска проверок и обновления прогресса
 async def run_check(dungeon_name, progress_bar, character_string, selected_keyword, selected_key):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)  # headless=False для отладки
+        browser = await p.chromium.launch(headless=False)
         page = await browser.new_page()
 
         try:
-            #print(selected_key)
             # Переход на страницу Raidbots Droptimizer
             await page.goto("https://www.raidbots.com/simbot/droptimizer", timeout=60000)
             await page.locator("#SimcUserInput-input").click()
             await page.locator("#SimcUserInput-input").fill(character_string)
             await page.get_by_text("Mythic+ Dungeons").click()
-            #await page.locator("div").filter(has_text=re.compile(r"^Cinderbrew Meadery$")).nth(1).click()
             await page.get_by_text(selected_keyword).click()
-            if(selected_key == 1):
-                await page.get_by_text(f"Mythic", exact=True).click()
+
+            if selected_key == 1:
+                await page.get_by_text("Mythic", exact=True).click()
             else:
                 await page.get_by_text(f"Mythic {selected_key}").click()
-            await page.pause()
+            
+            time.sleep(1)
+            await page.get_by_role("button", name="Run Droptimizer").click()
+            # Отслеживание изменений в Job Status
+            previous_status = None
+            max_retries = 60  # Максимальное количество попыток (например, 60 * 5 секунд = 5 минут)
+            retry_count = 0
+
+            while retry_count < max_retries:
+                try:
+                    # Находим элемент Job Status
+                    job_status_element = page.locator("div").filter(has_text=re.compile(r"^Job Status")).first
+                    job_status_text = await job_status_element.inner_text()
+
+                    # Если статус изменился, выводим его
+                    if job_status_text != previous_status:
+                        print(f"Текущий статус для {dungeon_name}: {job_status_text}")
+                        previous_status = job_status_text
+
+                    # Извлечение значений из текста
+                    match = re.search(r"(\d+)\s*/\s*(\d+)", job_status_text)
+                    if match:
+                        left_value = int(match.group(1))  # Левое значение (например, 120)
+                        right_value = int(match.group(2))  # Правое значение (например, 156)
+
+                        # Вычисление процентов
+                        percentage = (1 - (left_value / right_value)) * 100
+                        print(f"Процент выполнения для {dungeon_name}: {percentage:.2f}%")
+
+                        # Обновление прогресс-бара через root.after()
+                        root.after(0, lambda: update_progress_bar(progress_bar, percentage))
+
+                        # Если процент выполнения >= 100%, делаем скриншот
+                        if percentage >= 100:
+                            print(f"Задача для {dungeon_name} завершена! Сохраняем скриншот...")
+                            save_screenshot(page, selected_keyword)
+                            break
+
+                    # Проверка завершения задачи
+                    if "Completed" in job_status_text or "Finished" in job_status_text:
+                        print(f"Задача для {dungeon_name} завершена!")
+                        break
+
+                except Exception as e:
+                    print(f"Ошибка при получении статуса для {dungeon_name}: {e}")
+
+                # Пауза перед следующей проверкой
+                await asyncio.sleep(5)  # Проверяем каждые 5 секунд
+                retry_count += 1
+
+            # Если достигнут лимит попыток
+            if retry_count == max_retries:
+                print(f"Превышено максимальное время ожидания для {dungeon_name}.")
+
         except Exception as e:
             print(f"Ошибка для {dungeon_name}: {e}")
         finally:
             await browser.close()
+
+
+def save_screenshot(page, selected_keyword):
+    """Сохраняет скриншот полной страницы в папку ./Result/."""
+    # Создаем папку ./Result/, если она не существует
+    os.makedirs("./Result/", exist_ok=True)
+
+    # Формируем путь к файлу
+    file_path = f"./Result/{selected_keyword}.png"
+
+    # Делаем скриншот полной страницы
+    page.screenshot(path=file_path, full_page=True)
+    print(f"Скриншот сохранен: {file_path}")
+
+
+def update_progress_bar(progress_bar, value):
+    """Обновляет прогресс-бар в основном потоке."""
+    progress_bar['value'] = value
+    root.update_idletasks()
+
 
 # Функция, которая будет выполняться при нажатии на кнопку "Запустить"
 def run_code():
@@ -57,8 +133,9 @@ def run_code():
     for item in selected_items:
         create_progress_bar(item)
 
-    # Запускаем асинхронные задачи для каждого выбранного подземелья
-    asyncio.run(run_all_checks(selected_items, selected_keywords, selected_key))
+    # Запускаем асинхронные задачи в отдельном потоке
+    threading.Thread(target=lambda: asyncio.run(run_all_checks(selected_items, selected_keywords, selected_key))).start()
+
 
 # Функция для создания прогресс-бара
 def create_progress_bar(name):
@@ -74,6 +151,7 @@ def create_progress_bar(name):
     # Сохраняем прогресс-бар в словаре
     progress_bars[name] = progress
 
+
 # Функция для запуска всех проверок параллельно
 async def run_all_checks(selected_items, selected_keywords, selected_key):
     tasks = []
@@ -86,10 +164,10 @@ async def run_all_checks(selected_items, selected_keywords, selected_key):
     # Ждем завершения всех задач
     await asyncio.gather(*tasks)
 
+
 # Создание главного окна
 root = tk.Tk()
 root.title("UI Приложение")
-#root.geometry("800x600")  # Размер окна
 root.state('zoomed')
 
 # Разделение экрана на левую и правую части
