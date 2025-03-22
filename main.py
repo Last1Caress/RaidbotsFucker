@@ -26,6 +26,7 @@ async def run_check(dungeon_name, character_string, selected_keyword, selected_k
                 await page.get_by_text("Mythic", exact=True).click()
             else:
                 await page.get_by_text(f"Mythic {selected_key}").click()
+
             time.sleep(1)
             await page.get_by_role("button", name="Run Droptimizer").click()
             previous_status = None
@@ -37,7 +38,7 @@ async def run_check(dungeon_name, character_string, selected_keyword, selected_k
                     dungeon_summary_element = page.get_by_role("heading", name="Dungeon Summary")
                     if await dungeon_summary_element.count() > 0:
                         print(f"Элемент 'Dungeon Summary' найден для {dungeon_name}. Задача завершена!")
-                        root.after(0, lambda: update_progress_bar(progress_bars[dungeon_name], "Готово"))
+                        root.after(0, lambda: update_progress_bar(progress_bars[dungeon_name], "Готово", 100))
                         break
 
                     job_status_element = page.locator("div").filter(has_text=re.compile(r"^Job Status")).first
@@ -48,7 +49,7 @@ async def run_check(dungeon_name, character_string, selected_keyword, selected_k
                         previous_status = job_status_text
 
                     if "Processing" in job_status_text:
-                        root.after(0, lambda: update_progress_bar(progress_bars[dungeon_name], "Processing"))
+                        root.after(0, lambda: update_progress_bar(progress_bars[dungeon_name], "Processing", 99))
                         continue
 
                     match = re.search(r"(\d+)\s*/\s*(\d+)", job_status_text)
@@ -58,7 +59,7 @@ async def run_check(dungeon_name, character_string, selected_keyword, selected_k
                         percentage = (1 - (left_value / right_value)) * 100
                         print(f"Процент выполнения для {dungeon_name}: {percentage:.1f}%")
                         print(f"Место в очереди: {left_value} / {right_value}")
-                        root.after(0, lambda: update_progress_bar(progress_bars[dungeon_name], percentage))
+                        root.after(0, lambda: update_progress_bar(progress_bars[dungeon_name], percentage, percentage))
 
                 except Exception as e:
                     print(f"Ошибка при получении статуса для {dungeon_name}: {e}")
@@ -85,15 +86,18 @@ async def save_screenshot(page, selected_keyword):
     print(f"Скриншот сохранен: {file_path}")
 
 
-def update_progress_bar(progress_bar_data, value):
+def update_progress_bar(progress_bar_data, value, progress_value=None):
     progress_bar = progress_bar_data["progress"]
     label = progress_bar_data["label"]
 
     if isinstance(value, str):
         label.config(text=f"{label['text'].split(' (')[0]} ({value})")
     else:
-        progress_bar['value'] = value
         label.config(text=f"{label['text'].split(' (')[0]} ({value:.1f}%)")
+
+    if progress_value is not None:
+        progress_bar['value'] = progress_value
+
     root.update_idletasks()
 
 
